@@ -16,3 +16,4 @@ build/
 .settings/
 .classpath
 .project
+.gradle/
