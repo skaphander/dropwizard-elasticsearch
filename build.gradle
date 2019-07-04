@@ -21,9 +21,9 @@ repositories {
 
 dependencies {
     compile group: 'io.dropwizard', name: 'dropwizard-core', version: dropwizardVersion
-    compile group: 'org.elasticsearch.client', name: 'transport', version:elasticserachVersion
-    compile 'org.elasticsearch.client:elasticsearch-rest-high-level-client:' + elasticserachVersion
-    compile group: 'org.elasticsearch.client', name: 'elasticsearch-rest-client-sniffer', version: elasticserachVersion
+    compile group: 'org.elasticsearch.client', name: 'transport', version:elasticsearchVersion
+    compile 'org.elasticsearch.client:elasticsearch-rest-high-level-client:' + elasticsearchVersion
+    compile group: 'org.elasticsearch.client', name: 'elasticsearch-rest-client-sniffer', version: elasticsearchVersion
 
     testCompile group: 'junit', name: 'junit', version:'4.12'
     testCompile group: 'org.mockito', name: 'mockito-core', version:'2.27.0'
