@@ -1,5 +1,6 @@
 package io.dropwizard.elasticsearch.managed;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.http.Header;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
@@ -37,38 +38,38 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * A Dropwizard managed Elasticsearch {@link RestHighLevelClient}.
  * Depending on the {@link EsConfiguration} a High Level Rest Client
  * a {@link RestHighLevelClient} a is being created and its lifecycle is managed by Dropwizard.
- *
  */
 public class ManagedEsClient implements Managed {
     private RestHighLevelClient client = null;
     private Sniffer sniffer = null;
+
     public ManagedEsClient(final EsConfiguration config) throws Exception {
         checkNotNull(config, "EsConfiguration must not be null");
 
         RestClientBuilder restClientBuilder = RestClient.builder(config.getServersAsHttpHosts().toArray(new HttpHost[0]));
         setRequest(restClientBuilder, config);
-
+        final ImmutableList.Builder<RestClientBuilder.HttpClientConfigCallback> configCallbackBuilder = ImmutableList.builder();
         if (!config.getHeadersAsHeaders().isEmpty()) {
             restClientBuilder.setDefaultHeaders(config.getHeadersAsHeaders().toArray(new Header[0]));
         }
 
-        if (config.getNumberOfThreads()>0) {
-            setThreads(restClientBuilder, config);
+        if (config.getNumberOfThreads() > 0) {
+            configCallbackBuilder.add(createThreadsConfigCallback(config));
         }
 
-        if (config.getNode()!= null && !config.getNode().isEmpty()) {
+        if (config.getNode() != null && !config.getNode().isEmpty()) {
             setNodeSelector(restClientBuilder, config);
         }
 
         if (config.getBasicAuthentication() != null) {
-            setCredential(restClientBuilder, config);
+            configCallbackBuilder.add(createCredentialConfigCallback(config));
         }
 
-        if (config.getKeystore()!= null) {
-            setKeyStore(restClientBuilder, config);
+        if (config.getKeystore() != null) {
+            configCallbackBuilder.add(createKeystoreConfigCallback(config));
         }
-
-        if (config.getSniffer()!=null) {
+        configureHttpClient(restClientBuilder, configCallbackBuilder);
+        if (config.getSniffer() != null) {
             if (config.getSniffer().getSniffOnFailure()) {
                 SniffOnFailureListener sniffOnFailureListener =
                         new SniffOnFailureListener();
@@ -88,6 +89,19 @@ public class ManagedEsClient implements Managed {
 
         } else {
             this.client = new RestHighLevelClient(restClientBuilder);
+        }
+    }
+
+    private void configureHttpClient(RestClientBuilder restClientBuilder, ImmutableList.Builder<RestClientBuilder.HttpClientConfigCallback> configCallbackBuilder) {
+        ImmutableList<RestClientBuilder.HttpClientConfigCallback> configCallbacks = configCallbackBuilder.build();
+        if (!configCallbacks.isEmpty()) {
+            restClientBuilder.setHttpClientConfigCallback(httpClientBuilder -> {
+                HttpAsyncClientBuilder builder = httpClientBuilder;
+                for (RestClientBuilder.HttpClientConfigCallback callback : configCallbacks) {
+                    builder = callback.customizeHttpClient(httpClientBuilder);
+                }
+                return builder;
+            });
         }
     }
 
@@ -151,48 +165,28 @@ public class ManagedEsClient implements Managed {
 
     private void setRequest(RestClientBuilder restClientBuilder, EsConfiguration config) {
         restClientBuilder.setRequestConfigCallback(
-                new RestClientBuilder.RequestConfigCallback() {
-                    @Override
-                    public RequestConfig.Builder customizeRequestConfig(
-                            RequestConfig.Builder requestConfigBuilder) {
-                        return requestConfigBuilder
-                                .setConnectTimeout(config.getConnectTimeOut())
-                                .setSocketTimeout(config.getSocketTimeOut());
-                    }
-                });
+                requestConfigBuilder -> requestConfigBuilder
+                        .setConnectTimeout(config.getConnectTimeOut())
+                        .setSocketTimeout(config.getSocketTimeOut()));
     }
 
-    private void setThreads(RestClientBuilder restClientBuilder, EsConfiguration config) {
-        restClientBuilder.setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
-            @Override
-            public HttpAsyncClientBuilder customizeHttpClient(
-                    HttpAsyncClientBuilder httpClientBuilder) {
-                return httpClientBuilder.setDefaultIOReactorConfig(
-                        IOReactorConfig.custom()
-                                .setIoThreadCount(config.getNumberOfThreads())
-                                .build());
-            }
-        });
+    private RestClientBuilder.HttpClientConfigCallback createThreadsConfigCallback(EsConfiguration config) {
+        return httpClientBuilder -> httpClientBuilder.setDefaultIOReactorConfig(
+                IOReactorConfig.custom()
+                        .setIoThreadCount(config.getNumberOfThreads())
+                        .build());
     }
 
-    private void setCredential(RestClientBuilder restClientBuilder, EsConfiguration config) {
+    private RestClientBuilder.HttpClientConfigCallback createCredentialConfigCallback(EsConfiguration config) {
         final CredentialsProvider credentialsProvider =
                 new BasicCredentialsProvider();
         credentialsProvider.setCredentials(AuthScope.ANY,
                 new UsernamePasswordCredentials(config.getBasicAuthentication().getUser(), config.getBasicAuthentication().getPassword()));
-        restClientBuilder
-                .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
-                    @Override
-                    public HttpAsyncClientBuilder customizeHttpClient(
-                            HttpAsyncClientBuilder httpClientBuilder) {
-                        httpClientBuilder.disableAuthCaching();
-                        return httpClientBuilder
-                                .setDefaultCredentialsProvider(credentialsProvider);
-                    }
-                });
+        return httpClientBuilder -> httpClientBuilder
+                .setDefaultCredentialsProvider(credentialsProvider);
     }
 
-    private void setKeyStore(RestClientBuilder restClientBuilder, EsConfiguration config) throws Exception {
+    private RestClientBuilder.HttpClientConfigCallback createKeystoreConfigCallback(EsConfiguration config) throws Exception {
         KeyStore truststore = KeyStore.getInstance(config.getKeystore().getType());
         try (InputStream is = Files.newInputStream(config.getKeystore().getKeyStorePath())) {
             truststore.load(is, config.getKeystore().getKeyStorePass().toCharArray());
@@ -200,14 +194,7 @@ public class ManagedEsClient implements Managed {
         SSLContextBuilder sslBuilder = SSLContexts.custom()
                 .loadTrustMaterial(truststore, null);
         final SSLContext sslContext = sslBuilder.build();
-        restClientBuilder
-                .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
-                    @Override
-                    public HttpAsyncClientBuilder customizeHttpClient(
-                            HttpAsyncClientBuilder httpClientBuilder) {
-                        return httpClientBuilder.setSSLContext(sslContext);
-                    }
-                });
+        return httpClientBuilder -> httpClientBuilder.setSSLContext(sslContext);
     }
 
     private void setNodeSelector(RestClientBuilder restClientBuilder, EsConfiguration config) {
