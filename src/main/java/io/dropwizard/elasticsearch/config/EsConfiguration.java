@@ -58,7 +58,7 @@ public class EsConfiguration {
         getServers().forEach(hostAndPort -> {
             HttpHost httpHost = HttpHost.create(hostAndPort);
             if (httpHost.getPort() < 0) {
-                httpHost = new HttpHost(httpHost.getHostName(), 9200);
+                httpHost = new HttpHost(httpHost.getHostName(), 9200, httpHost.getSchemeName());
             }
             httpHosts.add(httpHost);
         });
