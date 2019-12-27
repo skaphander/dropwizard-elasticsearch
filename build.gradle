@@ -4,7 +4,7 @@ apply plugin: 'jacoco'
 apply from: file('repository.gradle')
 
 group = 'io.dropwizard.modules'
-version = buildNumber == 'SNAPSHOT' ? "${baseVersion}-${buildNumber}" : "${baseVersion}.${buildNumber}"
+version = "${baseVersion}-${buildNumber}"
 
 description = """Dropwizard Elasticsearch Bundle"""
 
